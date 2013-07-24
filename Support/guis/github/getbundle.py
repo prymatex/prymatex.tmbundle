@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 #-*- encoding: utf-8 -*-
+from __future__ import unicode_literals
 
 import os
 import json
@@ -23,28 +24,40 @@ MINIMUM_QUERY_LENGTH = 1
 class GithubBundleSearchThread(QtCore.QThread):
     # Signals
     dataUpdate = QtCore.Signal(object)
+    connectionError = QtCore.Signal(str)
     # Term to search for
     term = None
+    
+    def __del__(self):
+        self.wait()
 
     def run(self):
         if not self.term or len(self.term) < MINIMUM_QUERY_LENGTH:
             return
-        response = urltools.urlopen(GITHUB_API_SEARCH_URL % self.term).read().decode('utf-8')
-        data = json.loads(response)
-        self.dataUpdate.emit(data) # Thread safety
+        try:
+            response = urltools.urlopen(GITHUB_API_SEARCH_URL % self.term).read().decode('utf-8')
+            data = json.loads(response)
+            self.dataUpdate.emit(data) # Thread safety
+        except urltools.HTTPError as httpError:
+            self.connectionError.emit("%s" % httpError)
+        except urltools.URLError as urlError:
+            self.connectionError.emit("%s" % urlError)
 
     def setProxy(self):
         networkProxy = QtNetwork.QNetworkProxy.applicationProxy()
         if networkProxy.type() == QtNetwork.QNetworkProxy.HttpProxy:
-            proxy = "{host}:{port}".format(
+            httpProxyAddress = "http://{host}:{port}".format(
+                host = networkProxy.hostName(),
+                port = networkProxy.port())
+	    httpsProxyAddress = "https://{host}:{port}".format(
                 host = networkProxy.hostName(),
                 port = networkProxy.port())
             opener = urltools.build_opener(
                 urltools.HTTPHandler(),
                 urltools.HTTPSHandler(),
                 urltools.ProxyHandler({
-                    'http': proxy,
-                    'https': proxy
+                    'http': httpProxyAddress,
+                    'https': httpsProxyAddress
                 }))
             urltools.install_opener(opener)
 
@@ -74,6 +87,8 @@ class GithubBundlesDialog(QtGui.QDialog, Ui_GitHubClientDialog, PMXBaseDialog):
         self.widgetInfo.setVisible(False)
 
         self.workerThread.dataUpdate.connect(self.on_workerThread_recordsFound)
+        self.workerThread.connectionError.connect(self.on_workerThread_connectionError)
+        self.workerThread.finished.connect(self.on_workerThread_finished)
         self.model.dataChanged.connect(self.on_model_dataChanged)
 
         self.setupTableView()
@@ -88,8 +103,8 @@ class GithubBundlesDialog(QtGui.QDialog, Ui_GitHubClientDialog, PMXBaseDialog):
         self.tableViewResults.horizontalHeader().setClickable(True)
         
     def loadComboBoxNamespace(self):
-        for ns in self.application.supportManager.safeNamespaces:
-            self.comboBoxNamespace.addItem(ns)
+        for nsName in self.application.supportManager.safeNamespaceNames():
+            self.comboBoxNamespace.addItem(nsName)
 
     def setCurrentRepository(self, repo):
         self.currentRepository = repo
@@ -171,6 +186,13 @@ class GithubBundlesDialog(QtGui.QDialog, Ui_GitHubClientDialog, PMXBaseDialog):
         self.tableViewResults.setEnabled(True)
         self.proxy.sort(0)
 
+    def on_workerThread_connectionError(self, message):
+        self.tableViewResults.setEnabled(True)
+        QtGui.QMessageBox.critical(self, "Conection error", message)
+
+    def on_workerThread_finished(self):
+        print("finished el hilo")
+        
     def retrivalError(self, reason):
         self.tableViewResults.setEnabled(True)
         QtGui.QMessageBox.critical(self, _("Query Error"), "An error occurred<br><pre>%s</pre>" % reason)
