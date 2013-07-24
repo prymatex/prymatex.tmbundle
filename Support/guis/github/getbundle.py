@@ -18,7 +18,7 @@ from prymatex.core import PMXBaseDialog
 from .ui_githubclient import Ui_GitHubClientDialog
 from .model import RepositoryTableModel, RepositoryProxyTableModel
 
-GITHUB_API_SEARCH_URL = 'https://api.github.com/legacy/repos/search/%s+tmbundle'
+GITHUB_API_SEARCH_URL = 'https://api.github.com/legacy/repos/search/%s+tmbundle+fork:true'
 MINIMUM_QUERY_LENGTH = 1
 
 class GithubBundleSearchThread(QtCore.QThread):
@@ -49,7 +49,7 @@ class GithubBundleSearchThread(QtCore.QThread):
             httpProxyAddress = "http://{host}:{port}".format(
                 host = networkProxy.hostName(),
                 port = networkProxy.port())
-	    httpsProxyAddress = "https://{host}:{port}".format(
+            httpsProxyAddress = "https://{host}:{port}".format(
                 host = networkProxy.hostName(),
                 port = networkProxy.port())
             opener = urltools.build_opener(
@@ -116,11 +116,8 @@ class GithubBundlesDialog(QtGui.QDialog, Ui_GitHubClientDialog, PMXBaseDialog):
         self.labelFollowers.setText(str(repo["followers"]))
         self.labelForks.setText(str(repo["forks"]))
         self.lineEditFolder.setText(repo["folder"])
-        if repo["namespace"]:
-            namespaceBundlePath, _ = self.application.supportManager.namespaceElementPath(repo["namespace"], "Bundles")
-            self.labelDestiny.setText(os.path.join(namespaceBundlePath, repo["folder"]))
-        else:
-            self.labelDestiny.setText("")
+        namespaceBundlePath = self.application.supportManager.namespace(repo["namespace"]).bundles
+        self.labelDestiny.setText(os.path.join(namespaceBundlePath, repo["folder"]))
         self.labelUrl.setText(repo["url"])
 
     def reloadSupport(self):
@@ -164,16 +161,11 @@ class GithubBundlesDialog(QtGui.QDialog, Ui_GitHubClientDialog, PMXBaseDialog):
     # = Señales del modelo =
     # ======================
     def on_model_dataChanged(self, index):
-        repo = self.model.repositories[index.row()]
-        if repo["checked"]:
-            repo["namespace"] = self.comboBoxNamespace.currentText()
-        else:
-            repo["namespace"] = None
         self.buttonOk.setEnabled(self.model.hasSelected())
 
     def on_tableViewResults_activated(self, index):
+        repo = self.proxy.repository(index)
         self.widgetInfo.setVisible(True)
-        repo = self.model.repositories[index.row()]
         self.setCurrentRepository(repo)
 
     # ======================
@@ -181,7 +173,7 @@ class GithubBundlesDialog(QtGui.QDialog, Ui_GitHubClientDialog, PMXBaseDialog):
     # ======================
     def on_workerThread_recordsFound(self, data):
         self.model.clearUnselected()
-        self.model.addRepositories(data["repositories"])
+        self.model.addRepositories(data["repositories"], self.comboBoxNamespace.currentText())
         self.tableViewResults.resizeRowsToContents()
         self.tableViewResults.setEnabled(True)
         self.proxy.sort(0)
