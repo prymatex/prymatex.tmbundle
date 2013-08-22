@@ -193,7 +193,9 @@ class GithubBundlesDialog(QtGui.QDialog, Ui_GitHubClientDialog, PMXBaseDialog):
         repos = self.model.allSelected()
         self._processCount = len(repos)
         for repo in repos:
-            namespaceBundlePath, _ = self.application.supportManager.namespaceElementPath(repo["namespace"], "Bundles", create=True)
+            namespaceBundlePath = self.application.supportManager.namespace(repo["namespace"]).bundles
+            if not os.path.exists(namespaceBundlePath):
+                os.makedirs(namespaceBundlePath)
             process = QtCore.QProcess(self)
             process.setWorkingDirectory(namespaceBundlePath)
             process.finished[int].connect(self.on_processClone_finished)
